@@ -13,11 +13,30 @@ from observation_operators import build_total_co2
 
 class DataLoader:
     @staticmethod
+    def discover_member_wrfouts(config: Config) -> List[Path]:
+        """按 run_wrf/t01..tNN 结构扫描各集合成员 wrfout。"""
+        paths: List[Path] = []
+        for i in range(1, config.num_members + 1):
+            mdir = config.wrf_member_dir(i)
+            if not mdir.exists():
+                continue
+            candidates = sorted(mdir.glob(f"wrfout_{config.assim_domain}_*"))
+            if candidates:
+                paths.append(candidates[-1])
+        return paths
+
+    @staticmethod
     def load_wrf_dataset(config: Config) -> Dataset:
         path = config.wrfout_files.get(config.assim_domain)
-        if not path:
-            raise FileNotFoundError(f"Missing wrfout path for domain={config.assim_domain}")
-        return Dataset(path)
+        if path:
+            return Dataset(path)
+
+        member_wrfouts = DataLoader.discover_member_wrfouts(config)
+        if not member_wrfouts:
+            raise FileNotFoundError(
+                f"Missing wrfout path for domain={config.assim_domain}, and no file found in {config.concentration_base_dir}/{config.concentration_member_prefix}xx"
+            )
+        return Dataset(str(member_wrfouts[0]))
 
     @staticmethod
     def load_wrf_grid_info(config: Config, ds: Dataset) -> Dict:
@@ -59,8 +78,11 @@ class DataLoader:
     @staticmethod
     def load_observation_data(config: Config) -> Dict[str, pd.DataFrame]:
         out = {}
+        sat_day_dir = config.sat_day_dir()
         for src in config.observation_sources:
-            file_path = Path(config.obs_root_dir) / src["csv_file"]
+            file_path = sat_day_dir / src["csv_file"]
+            if not file_path.exists():
+                file_path = Path(config.obs_root_dir) / src["csv_file"]
             if not file_path.exists():
                 continue
             df = pd.read_csv(file_path)

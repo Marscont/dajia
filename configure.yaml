@@ -1,19 +1,31 @@
 targettime: "2022050100"
 time_index: null
 
+# 选择同化区域：d01|d02|d03
 assim_domain: "d02"
 domain_resolution_km:
   d01: 27
   d02: 9
   d03: 3
 
+# 方式A：直接指定 wrfout 路径（可选）
 wrfout_files:
-  d01: "/path/to/wrfout_d01_YYYY-MM-DD_HH:MM:SS"
-  d02: "/path/to/wrfout_d02_YYYY-MM-DD_HH:MM:SS"
-  d03: "/path/to/wrfout_d03_YYYY-MM-DD_HH:MM:SS"
+  d01: ""
+  d02: ""
+  d03: ""
 
-obs_root_dir: "/path/to/obs"
-output_base_dir: "./output"
+# 方式B：按目录结构自动发现（推荐）
+# EMISS/e01..e32
+emissions_base_dir: "./EMISS"
+emissions_member_prefix: "e"
+# run_wrf/t01..t32（每个成员目录下为 wrfout_d0x_*）
+concentration_base_dir: "./run_wrf"
+concentration_member_prefix: "t"
+
+# SAT_DATA/YYYYMMDD/xxx.csv
+obs_root_dir: "./SAT_DATA"
+# ENKF_RESULT/YYYYMMDD/d0x/
+output_base_dir: "./ENKF_RESULT"
 
 observation_sources:
   - name: "satellite_xco2"
@@ -42,16 +54,19 @@ num_members: 32
 sigma_threshold: 3.0
 co2_system_bias: 410.0
 
+# 近地层同化高度（可设 50 或 100）
 surface_interp_height_m: 50.0
 xco2_levels: 20
 
-matching_method: "nearest"   # nearest|bilinear（当前实现nearest）
+matching_method: "nearest"   # nearest|bilinear（当前实现 nearest）
 
 inflation_mode: "adaptive"   # adaptive|fixed
 inflation_factor: 1.1
 adaptive_inflation_min: 1.0
 adaptive_inflation_max: 1.3
 
+# 预留：局地化半径（网格数）
 localization_radius_grid_base: 8.0
+
 initial_ensemble_std: 0.8
 min_emission: 0.0001

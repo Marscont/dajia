@@ -18,6 +18,8 @@ class Config:
     wrfout_files: Dict[str, str]
     output_base_dir: str
     obs_root_dir: str
+    emissions_base_dir: str
+    concentration_base_dir: str
     observation_sources: List[Dict[str, Any]]
 
     num_members: int
@@ -37,10 +39,25 @@ class Config:
     initial_ensemble_std: float
 
     min_emission: float = 1e-4
+    emissions_member_prefix: str = "e"
+    concentration_member_prefix: str = "t"
+
+    @property
+    def day(self) -> str:
+        return self.targettime[:8]
 
     @property
     def output_dir(self) -> Path:
-        return Path(self.output_base_dir) / self.targettime / self.assim_domain
+        return Path(self.output_base_dir) / self.day / self.assim_domain
+
+    def sat_day_dir(self) -> Path:
+        return Path(self.obs_root_dir) / self.day
+
+    def emiss_member_dir(self, idx_1based: int) -> Path:
+        return Path(self.emissions_base_dir) / f"{self.emissions_member_prefix}{idx_1based:02d}"
+
+    def wrf_member_dir(self, idx_1based: int) -> Path:
+        return Path(self.concentration_base_dir) / f"{self.concentration_member_prefix}{idx_1based:02d}"
 
 
 class Initializer:
@@ -57,6 +74,8 @@ class Initializer:
             wrfout_files=raw.get("wrfout_files", {}),
             output_base_dir=raw["output_base_dir"],
             obs_root_dir=raw["obs_root_dir"],
+            emissions_base_dir=raw.get("emissions_base_dir", "./EMISS"),
+            concentration_base_dir=raw.get("concentration_base_dir", "./run_wrf"),
             observation_sources=raw.get("observation_sources", []),
             num_members=int(raw.get("num_members", 32)),
             sigma_threshold=float(raw.get("sigma_threshold", 3.0)),
@@ -71,6 +90,8 @@ class Initializer:
             localization_radius_grid_base=float(raw.get("localization_radius_grid_base", 8.0)),
             initial_ensemble_std=float(raw.get("initial_ensemble_std", 0.8)),
             min_emission=float(raw.get("min_emission", 1e-4)),
+            emissions_member_prefix=str(raw.get("emissions_member_prefix", "e")),
+            concentration_member_prefix=str(raw.get("concentration_member_prefix", "t")),
         )
 
     @staticmethod
