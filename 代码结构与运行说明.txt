@@ -88,9 +88,9 @@ EnKF 同化代码结构与运行过程说明（按 configure.yaml 新版）
 五、输出文件
 -----------
 每个日期输出在：ENKF_RESULT/YYYYMMDD/d0x/
-- posterior_emission.nc
-- posterior_surface_co2.nc
-- posterior_3d_co2.nc
+- posterior_wrfout_like.nc（wrfout同格式）
+- posterior_wrfchemi_like.nc（wrfchemi同格式，若模板存在）
+- posterior_emission_fallback.nc（仅在找不到wrfchemi模板时生成）
 - diagnostics.json
 - matched_*.csv
 

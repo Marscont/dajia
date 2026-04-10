@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 
 import copy
 import json
@@ -10,7 +11,7 @@ from config_init import Initializer
 from data_loading import DataLoader
 from enkf_assimilation import EnKF
 from observation_operators import interp_surface_ppm_at_height, xco2_with_averaging_kernel
-from save_concentrations import save_2d_nc, save_3d_nc
+from save_concentrations import save_like_wrfout
 from save_emissions import ResultSaver as EmissionSaver
 from spatial_matching import SpatialMatcher
 
@@ -139,9 +140,39 @@ def run_single_date(config):
     post3d = prior3d.copy()
     post3d[config.conc_level] = xa_mean_2d
 
-    EmissionSaver.save_posterior_emissions(Xf, (wrf_grid_info["nlat"], wrf_grid_info["nlon"]), out_dir / "posterior_emission.nc")
-    save_2d_nc(out_dir / "posterior_surface_co2.nc", "CO2_SURF_POST", xa_mean_2d)
-    save_3d_nc(out_dir / "posterior_3d_co2.nc", "CO2_POST", post3d)
+    wrfout_template = Path(wrf_ds.filepath())
+
+    # wrfout格式浓度输出（复制模板后写新变量）
+    save_like_wrfout(
+        wrfout_template=wrfout_template,
+        output_path=out_dir / "posterior_wrfout_like.nc",
+        posterior_3d=post3d,
+        posterior_surface_2d=xa_mean_2d,
+        var3d_name="CO2_POST",
+        var2d_name="CO2_SURF_POST",
+        time_index=-1,
+    )
+
+    # wrfchemi格式排放输出（复制EMISS模板后覆写排放变量）
+    wrfchemi_tpl = None
+    emdir = config.emiss_member_dir(1)
+    if emdir.exists():
+        cands = sorted(emdir.glob("wrfchemi*"))
+        if cands:
+            wrfchemi_tpl = cands[-1]
+
+    if wrfchemi_tpl is not None:
+        EmissionSaver.save_posterior_emissions_like_wrfchemi(
+            Xa=Xf,
+            shape_2d=(wrf_grid_info["nlat"], wrf_grid_info["nlon"]),
+            output_path=out_dir / "posterior_wrfchemi_like.nc",
+            wrfchemi_template_path=wrfchemi_tpl,
+            emission_var_name=None,
+            time_index=-1,
+        )
+    else:
+        # fallback: 若模板不存在，保留简化输出避免流程中断
+        EmissionSaver.save_posterior_emissions(Xf, (wrf_grid_info["nlat"], wrf_grid_info["nlon"]), out_dir / "posterior_emission_fallback.nc")
 
     with open(out_dir / "diagnostics.json", "w", encoding="utf-8") as f:
         json.dump(diagnostics, f, ensure_ascii=False, indent=2)
