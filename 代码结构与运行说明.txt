@@ -1,0 +1,107 @@
+EnKF 同化代码结构与运行过程说明（按 configure.yaml 新版）
+====================================================
+
+一、你当前的目录组织
+-------------------
+- EMISS/e01..e32：排放集合成员目录
+- run_wrf/t01..t32：浓度集合成员目录（每个目录内有 wrfout_d01/d02/d03）
+- SAT_DATA/YYYYMMDD：每天的卫星/站点观测 CSV
+- ENKF_RESULT/YYYYMMDD/d0x：程序输出目录
+
+程序已按上述结构适配。
+
+
+二、代码结构
+-----------
+1) config_init.py
+   - 读取 configure.yaml
+   - 解析时间范围 start_time/end_time
+   - 生成按天循环的 targettime（YYYYMMDDHH）
+   - 路径工具：sat_day_dir / wrf_member_dir / emiss_member_dir
+
+2) data_loading.py
+   - 读取 wrfout（优先 wrfout_files；否则自动扫描 run_wrf/t01..tNN）
+   - 读取 WRF 网格和变量
+   - 总 CO2：CO2_ANT + CO2_BCK + CO2_BIO - co2_system_bias
+   - 读取观测 CSV（优先 SAT_DATA/YYYYMMDD），按 time + 值域 + 3σ筛选
+
+3) observation_operators.py
+   - 地面观测算子：按高度（50/100m）插值得到近地浓度
+   - 卫星观测算子：平均核（AK）方式计算 XCO2
+
+4) spatial_matching.py
+   - 经纬度 -> WRF 网格索引，剔除域外观测
+
+5) enkf_assimilation.py
+   - EnKF 分析更新
+   - 固定/自适应通胀
+
+6) main_controller.py
+   - 主控
+   - 按 start_time~end_time 每天循环同化
+   - 每天执行两步同化：surface -> xco2
+   - 支持 conc_system_error: Auto / 数值
+
+7) save_concentrations.py + save_emissions.py
+   - 输出后验 2D/3D 浓度和后验排放 NetCDF
+
+
+三、与新版 configure.yaml 对应关系
+---------------------------------
+1) 时间字段
+- start_time / end_time：控制按天批处理
+- targettime：默认同化时刻（程序会在循环中覆盖为当天时刻）
+- time_index：WRF 时间索引，null 表示最后一个时次
+
+2) 路径字段
+- obs_root_dir -> SAT_DATA 根目录
+- concentration_base_dir -> run_wrf 根目录
+- emissions_base_dir -> EMISS 根目录
+- output_base_dir -> ENKF_RESULT 根目录
+
+3) 同化字段
+- num_members: 32
+- sigma_threshold: 3
+- conc_system_error: Auto 或数值
+- conc_level: 0（更新层）
+- co2_system_bias: 410.0
+
+4) 观测源字段
+- observation_sources 可配置多源 CSV
+- 每个源都有 columns.lat/lon/val/err 映射
+- err 为空时使用 default_err
+
+
+四、运行流程
+-----------
+1. 读取 configure.yaml
+2. 生成日期序列（start_time 到 end_time，按天）
+3. 对每一天：
+   a) 创建输出目录 ENKF_RESULT/YYYYMMDD/d0x
+   b) 读取 wrfout + 观测 CSV
+   c) 构造集合
+   d) surface 同化
+   e) xco2 同化
+   f) 输出 NetCDF/CSV/diagnostics
+
+
+五、输出文件
+-----------
+每个日期输出在：ENKF_RESULT/YYYYMMDD/d0x/
+- posterior_wrfout_like.nc（wrfout同格式）
+- posterior_wrfchemi_like.nc（wrfchemi同格式，若模板存在）
+- posterior_emission_fallback.nc（仅在找不到wrfchemi模板时生成）
+- diagnostics.json
+- matched_*.csv
+
+
+六、运行命令
+-----------
+python main_controller.py
+
+
+七、注意事项
+-----------
+1) 观测时间列 `time` 支持常见格式，建议统一为：YYYY-MM-DD-HH。
+2) 若 wrfout_files 留空，程序会从 run_wrf/t01..tNN 自动找 wrfout_d0x_*。
+3) `conc_system_error: Auto` 时，会按“观测均值 - 模式模拟均值”自动修正观测算子。

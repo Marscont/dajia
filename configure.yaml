@@ -1,0 +1,126 @@
+# 时间配置
+time_index: null  # 自定义时间索引（None则使用最后一个时间步）
+
+# run time
+start_time: "2022-05-04 00:00:00"
+end_time:   "2022-05-05 00:00:00"
+
+# 选择同化区域
+assim_domain: "d02"
+domain_resolution_km:
+  d01: 27
+  d02: 9
+  d03: 3
+
+# 可选：直接指定 wrfout 文件（优先级最高）
+wrfout_files:
+  d01: ""
+  d02: ""
+  d03: ""
+
+# 观测数据配置
+obs_root_dir: "/home/guojy/opt/xininglanzhou/ENKF/SAT_DATA"  # 观测根目录
+
+# 多源观测配置（支持CSV格式，可扩展）
+observation_sources:
+  - name: "satellite_xco2"
+    type: "xco2"  # 柱浓度类型
+    csv_file: "sat_xco2.csv"
+    columns:
+      lat: "Latitude"
+      lon: "Longitude"
+      val: "xco2"
+      err: "xco2_error"
+    default_err: 0.5
+    val_range: [390, 430]
+
+  - name: "satellite_surface"
+    type: "surface"  # 近地面类型
+    csv_file: "sat_surface.csv"
+    columns:
+      lat: "Latitude"
+      lon: "Longitude"
+      val: "CO2"
+      err: "error"
+    default_err: 2.0
+    val_range: [380, 450]
+
+  - name: "ground_station"
+    type: "surface"
+    csv_file: "ground.csv"
+    columns:
+      lat: "station_lat"
+      lon: "station_lon"
+      val: "co2_conc"
+      err: "uncertainty"
+    default_err: 0.8
+    val_range: [370, 460]
+
+  - name: "shipborne"
+    type: "surface"
+    csv_file: "ship.csv"
+    columns:
+      lat: "lat"
+      lon: "lon"
+      val: "co2"
+      err: null  # 无误差列
+    default_err: 1.2
+    val_range: [375, 455]
+
+# 同化核心配置
+num_members: 32  # 集合成员数
+sigma_threshold: 3  # 3σ过滤阈值
+conc_system_error: "Auto"  # 浓度系统误差（Auto 或 数值）
+conc_level: 0  # 近地面观测对应层数
+co2_system_bias: 410.0  # CO2_ANT+CO2_BCK+CO2_BIO 后减去的系统偏差
+
+# 观测算子配置
+surface_interp_height_m: 50.0
+xco2_levels: 20
+matching_method: "nearest"
+
+# 通胀配置
+inflation_mode: "adaptive"
+inflation_factor: 1.1
+adaptive_inflation_min: 1.0
+adaptive_inflation_max: 1.3
+
+# 文件路径配置
+concentration_base_dir: "/home/guojy/opt/xininglanzhou/ENKF/run_wrf"  # WRF先验浓度目录
+emissions_base_dir: "/home/guojy/opt/xininglanzhou/ENKF/EMISS"  # 排放文件目录
+output_base_dir: "/home/guojy/opt/xininglanzhou/ENKF/ENKF_RESULT"  # 结果输出目录
+base_path: "/home/guojy/opt/xininglanzhou/ENKF"
+wrf_run_source: "/home/guojy/opt/WRF/WRFV4.5.2/run"
+vprm_source: "/home/guojy/opt/xininglanzhou/ENKF/VPRM_DATA"
+restart_source: "/home/guojy/opt/xininglanzhou/ENKF/INIT"
+program_path: "/home/guojy/opt/xininglanzhou/ENKF/enkf_programs"
+
+# 集合成员文件夹配置
+emissions_member_prefix: "e"  # 排放成员文件夹前缀（e01, e02...）
+concentration_member_prefix: "t"  # 浓度成员文件夹前缀（t01, t02...）
+
+# 观测点空间聚类配置（预留）
+obs_clustering_threshold: 0.0001
+spatial_matching_threshold: 0.05
+
+# 排放最小值约束
+min_emission: 0.0001
+
+# 浓度变量名称列表（预留）
+conc_var_names: ["CO2_ANT", "CO2_BCK", "CO2_BIO"]
+
+# 空间相关性配置（预留）
+spatial_corr_scale: 0.5
+corr_type: "gaussian"
+unobserved_update_weight: 0.3
+
+# wrf run parameters（预留）
+cores_per_job: 16
+total_cores: 128
+
+# 默认同化时刻（与 start_time 第一天一致时可不改）
+targettime: "2022050400"
+
+# 局地化半径（预留）
+localization_radius_grid_base: 8.0
+initial_ensemble_std: 0.8
