@@ -1,168 +1,107 @@
-EnKF 同化代码结构与运行过程说明
-=================================
+EnKF 同化代码结构与运行过程说明（按 configure.yaml 新版）
+====================================================
 
-一、项目目标
+一、你当前的目录组织
+-------------------
+- EMISS/e01..e32：排放集合成员目录
+- run_wrf/t01..t32：浓度集合成员目录（每个目录内有 wrfout_d01/d02/d03）
+- SAT_DATA/YYYYMMDD：每天的卫星/站点观测 CSV
+- ENKF_RESULT/YYYYMMDD/d0x：程序输出目录
+
+程序已按上述结构适配。
+
+
+二、代码结构
 -----------
-本项目用于对 WRF 模式输出的 CO2 场进行集合卡尔曼滤波（EnKF）同化，支持：
-1) 选择同化区域（d01 / d02 / d03）；
-2) 读取卫星与地面（或其他近地）CSV观测；
-3) 两步同化流程：先同化近地面浓度，再同化卫星柱浓度（XCO2）；
-4) 输出后验排放、后验浓度场及诊断信息。
+1) config_init.py
+   - 读取 configure.yaml
+   - 解析时间范围 start_time/end_time
+   - 生成按天循环的 targettime（YYYYMMDDHH）
+   - 路径工具：sat_day_dir / wrf_member_dir / emiss_member_dir
+
+2) data_loading.py
+   - 读取 wrfout（优先 wrfout_files；否则自动扫描 run_wrf/t01..tNN）
+   - 读取 WRF 网格和变量
+   - 总 CO2：CO2_ANT + CO2_BCK + CO2_BIO - co2_system_bias
+   - 读取观测 CSV（优先 SAT_DATA/YYYYMMDD），按 time + 值域 + 3σ筛选
+
+3) observation_operators.py
+   - 地面观测算子：按高度（50/100m）插值得到近地浓度
+   - 卫星观测算子：平均核（AK）方式计算 XCO2
+
+4) spatial_matching.py
+   - 经纬度 -> WRF 网格索引，剔除域外观测
+
+5) enkf_assimilation.py
+   - EnKF 分析更新
+   - 固定/自适应通胀
+
+6) main_controller.py
+   - 主控
+   - 按 start_time~end_time 每天循环同化
+   - 每天执行两步同化：surface -> xco2
+   - 支持 conc_system_error: Auto / 数值
+
+7) save_concentrations.py + save_emissions.py
+   - 输出后验 2D/3D 浓度和后验排放 NetCDF
 
 
-二、推荐目录结构（与你当前数据组织一致）
---------------------------------------
-项目根目录/
-├─ EMISS/
-│  ├─ e01/
-│  ├─ e02/
-│  └─ ... e32/
-├─ run_wrf/
-│  ├─ t01/   (包含 wrfout_d01_*, wrfout_d02_*, wrfout_d03_*)
-│  ├─ t02/
-│  └─ ... t32/
-├─ SAT_DATA/
-│  ├─ YYYYMMDD/
-│  │  ├─ sat_xco2.csv
-│  │  └─ ground.csv
-│  └─ ...
-└─ ENKF_RESULT/
-   ├─ YYYYMMDD/
-   │  └─ d02/
-   │     ├─ posterior_emission.nc
-   │     ├─ posterior_surface_co2.nc
-   │     ├─ posterior_3d_co2.nc
-   │     ├─ diagnostics.json
-   │     └─ matched_*.csv
-   └─ ...
-
-说明：
-- 程序优先从 SAT_DATA/YYYYMMDD/ 读取观测文件；若找不到，再回退到 SAT_DATA/ 根目录读取。
-- 输出目录按“日文件夹”组织：ENKF_RESULT/YYYYMMDD/d0x/。
-
-
-三、代码文件结构
----------------
-1. config_init.py
-   - 定义 Config 数据结构。
-   - 负责读取 configure.yaml。
-   - 提供路径工具：
-     * sat_day_dir(): SAT_DATA/YYYYMMDD
-     * emiss_member_dir(i): EMISS/eXX
-     * wrf_member_dir(i): run_wrf/tXX
-
-2. configure.yaml
-   - 运行配置文件。
-   - 定义同化域、wrfout路径、观测源、误差参数、膨胀设置、集合成员数等。
-
-3. data_loading.py
-   - 读取 WRF 数据：网格、CO2分量、气压、几何高度。
-   - 计算总 CO2：CO2_ANT + CO2_BCK + CO2_BIO - co2_system_bias。
-   - 支持从 run_wrf/t01..t32 自动发现 wrfout（当 wrfout_files 为空时）。
-   - 读取观测 CSV，并按时间、值域、3σ规则做基础筛选。
-   - 构造初始集合（扰动先验场）。
-
-4. observation_operators.py
-   - 实现柱浓度压力权重计算。
-   - 实现卫星平均核（AK）XCO2 观测算子。
-   - 实现近地层（如50m/100m）插值观测算子。
-
-5. spatial_matching.py
-   - 使用 wrf.ll_to_xy 将观测经纬度映射到 WRF 网格索引。
-   - 过滤掉落在域外的观测。
-
-6. enkf_assimilation.py
-   - EnKF 核心更新（分析步）。
-   - 支持 fixed/adaptive inflation（固定或自适应通胀）。
-
-7. main_controller.py
-   - 主控流程入口。
-   - 按“surface -> xco2”顺序执行两步同化。
-   - 组织匹配、构造观测算子输出、调用EnKF、保存结果。
-
-8. save_concentrations.py
-   - 保存后验 2D 表层浓度 NetCDF。
-   - 保存后验 3D 浓度 NetCDF。
-
-9. save_emissions.py
-   - 保存后验排放 NetCDF。
-
-
-四、关键计算逻辑
----------------
-1) 总CO2计算
-   total_co2 = CO2_ANT + CO2_BCK + CO2_BIO - co2_system_bias
-
-2) 地面/近地观测算子
-   - 对每个观测点提取该网格的垂直 CO2 廓线 + 高度廓线；
-   - 在配置高度（surface_interp_height_m，如50m或100m）处进行线性插值；
-   - 得到 H(x) 与观测值 y 比较后进入 EnKF。
-
-3) 卫星XCO2观测算子（AK）
-   - 将 WRF CO2 按卫星给定 pressure_levels_0..19 插值；
-   - 使用 pressure_weights_from_boundaries 计算层权重 w_i；
-   - 根据公式计算：
-     XCO2 = xco2_apriori + Σ [ w_i * A_i * (CO2_i(interp) - CO2_apriori_i) ]
-
-4) EnKF分析更新
-   - 计算集合协方差 Pxy 与 Pyy；
-   - 结合观测误差 R 得到卡尔曼增益 K；
-   - 进行扰动观测更新，得到后验集合 Xa。
-
-
-五、运行流程（main_controller.py）
+三、与新版 configure.yaml 对应关系
 ---------------------------------
-1. 加载 configure.yaml；
-2. 创建输出目录 ENKF_RESULT/YYYYMMDD/d0x；
-3. 读取目标域 wrfout、网格信息、模式变量；
-4. 读取并筛选观测；
-5. 基于先验场构造初始集合 Xf；
-6. 第一步：遍历 type=surface 的观测源执行同化；
-7. 第二步：遍历 type=xco2 的观测源执行同化；
-8. 计算后验均值场并写出：
-   - posterior_emission.nc
-   - posterior_surface_co2.nc
-   - posterior_3d_co2.nc
-   - diagnostics.json
-   - matched_*.csv
+1) 时间字段
+- start_time / end_time：控制按天批处理
+- targettime：默认同化时刻（程序会在循环中覆盖为当天时刻）
+- time_index：WRF 时间索引，null 表示最后一个时次
 
+2) 路径字段
+- obs_root_dir -> SAT_DATA 根目录
+- concentration_base_dir -> run_wrf 根目录
+- emissions_base_dir -> EMISS 根目录
+- output_base_dir -> ENKF_RESULT 根目录
 
-六、如何配置（configure.yaml）
------------------------------
-1) 必填/常用
-- targettime: "YYYYMMDDHH"（例如 2022050100）
-- assim_domain: d01|d02|d03
+3) 同化字段
 - num_members: 32
+- sigma_threshold: 3
+- conc_system_error: Auto 或数值
+- conc_level: 0（更新层）
 - co2_system_bias: 410.0
 
-2) 路径相关
-- emissions_base_dir: "./EMISS"
-- concentration_base_dir: "./run_wrf"
-- obs_root_dir: "./SAT_DATA"
-- output_base_dir: "./ENKF_RESULT"
-
-3) 自动发现机制
-- wrfout_files 若为空，会自动扫描 run_wrf/t01..t32 中匹配 wrfout_d0x_* 的文件。
+4) 观测源字段
+- observation_sources 可配置多源 CSV
+- 每个源都有 columns.lat/lon/val/err 映射
+- err 为空时使用 default_err
 
 
-七、如何运行
+四、运行流程
 -----------
-1. 修改 configure.yaml（尤其是路径和同化域）；
-2. 执行：
-   python main_controller.py
-3. 检查 ENKF_RESULT/YYYYMMDD/d0x 下输出。
+1. 读取 configure.yaml
+2. 生成日期序列（start_time 到 end_time，按天）
+3. 对每一天：
+   a) 创建输出目录 ENKF_RESULT/YYYYMMDD/d0x
+   b) 读取 wrfout + 观测 CSV
+   c) 构造集合
+   d) surface 同化
+   e) xco2 同化
+   f) 输出 NetCDF/CSV/diagnostics
 
 
-八、常见问题排查
----------------
-1. 没有观测参与同化：
-   - 检查 time 过滤条件；
-   - 检查 val_range 与 3σ 过滤；
-   - 检查观测经纬度是否落在当前域内。
+五、输出文件
+-----------
+每个日期输出在：ENKF_RESULT/YYYYMMDD/d0x/
+- posterior_emission.nc
+- posterior_surface_co2.nc
+- posterior_3d_co2.nc
+- diagnostics.json
+- matched_*.csv
 
-2. XCO2计算报错（缺列）：
-   - 检查 20 层列是否齐全：pressure_levels_*, co2_profile_apriori_*, xco2_avg_kernel_*。
 
-3. wrfout 找不到：
-   - 检查 run_wrf/t01..t32 中是否存在 wrfout_d01/d02/d03 文件；
-   - 或直接在 wrfout_files 中填写每个域的绝对路径。
+六、运行命令
+-----------
+python main_controller.py
+
+
+七、注意事项
+-----------
+1) 观测时间列 `time` 支持常见格式，建议统一为：YYYY-MM-DD-HH。
+2) 若 wrfout_files 留空，程序会从 run_wrf/t01..tNN 自动找 wrfout_d0x_*。
+3) `conc_system_error: Auto` 时，会按“观测均值 - 模式模拟均值”自动修正观测算子。

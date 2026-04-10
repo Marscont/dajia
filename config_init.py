@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 import yaml
 
@@ -11,6 +12,8 @@ import yaml
 class Config:
     time_index: Optional[int]
     targettime: str
+    start_time: str
+    end_time: str
 
     assim_domain: str
     domain_resolution_km: Dict[str, float]
@@ -25,6 +28,8 @@ class Config:
     num_members: int
     sigma_threshold: float
     co2_system_bias: float
+    conc_system_error: Any
+    conc_level: int
 
     matching_method: str
     surface_interp_height_m: float
@@ -66,9 +71,15 @@ class Initializer:
         with open(config_path, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f)
 
+        start_time = str(raw.get("start_time", "2022-01-01 00:00:00"))
+        end_time = str(raw.get("end_time", start_time))
+        default_target = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S").strftime("%Y%m%d%H")
+
         return Config(
             time_index=raw.get("time_index"),
-            targettime=str(raw.get("targettime", "")),
+            targettime=str(raw.get("targettime", default_target)),
+            start_time=start_time,
+            end_time=end_time,
             assim_domain=raw.get("assim_domain", "d02"),
             domain_resolution_km=raw.get("domain_resolution_km", {"d01": 27, "d02": 9, "d03": 3}),
             wrfout_files=raw.get("wrfout_files", {}),
@@ -80,6 +91,8 @@ class Initializer:
             num_members=int(raw.get("num_members", 32)),
             sigma_threshold=float(raw.get("sigma_threshold", 3.0)),
             co2_system_bias=float(raw.get("co2_system_bias", 410.0)),
+            conc_system_error=raw.get("conc_system_error", "Auto"),
+            conc_level=int(raw.get("conc_level", 0)),
             matching_method=raw.get("matching_method", "nearest"),
             surface_interp_height_m=float(raw.get("surface_interp_height_m", 50.0)),
             xco2_levels=int(raw.get("xco2_levels", 20)),
@@ -99,3 +112,13 @@ class Initializer:
         out = config.output_dir
         out.mkdir(parents=True, exist_ok=True)
         return out
+
+    @staticmethod
+    def iter_target_days(config: Config) -> Iterator[str]:
+        st = datetime.strptime(config.start_time, "%Y-%m-%d %H:%M:%S")
+        ed = datetime.strptime(config.end_time, "%Y-%m-%d %H:%M:%S")
+        cur = datetime(st.year, st.month, st.day, st.hour)
+        last = datetime(ed.year, ed.month, ed.day, ed.hour)
+        while cur <= last:
+            yield cur.strftime("%Y%m%d%H")
+            cur += timedelta(days=1)

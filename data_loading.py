@@ -14,7 +14,6 @@ from observation_operators import build_total_co2
 class DataLoader:
     @staticmethod
     def discover_member_wrfouts(config: Config) -> List[Path]:
-        """按 run_wrf/t01..tNN 结构扫描各集合成员 wrfout。"""
         paths: List[Path] = []
         for i in range(1, config.num_members + 1):
             mdir = config.wrf_member_dir(i)
@@ -76,6 +75,21 @@ class DataLoader:
         }
 
     @staticmethod
+    def _filter_by_target_hour(df: pd.DataFrame, targettime: str) -> pd.DataFrame:
+        if "time" not in df.columns:
+            return df
+        target_dt = pd.to_datetime(targettime, format="%Y%m%d%H", errors="coerce")
+        if pd.isna(target_dt):
+            return df
+        # 兼容 YYYY-MM-DD-HH / YYYY-MM-DD HH:MM:SS / 其他可解析格式
+        obs_dt = pd.to_datetime(df["time"].astype(str).str.replace("-", "-", regex=False), errors="coerce")
+        # 对于 YYYY-MM-DD-HH，pandas 有时不稳定，手动兜底
+        fallback = pd.to_datetime(df["time"].astype(str), format="%Y-%m-%d-%H", errors="coerce")
+        obs_dt = obs_dt.fillna(fallback)
+        m = (obs_dt.dt.year == target_dt.year) & (obs_dt.dt.month == target_dt.month) & (obs_dt.dt.day == target_dt.day) & (obs_dt.dt.hour == target_dt.hour)
+        return df[m].copy()
+
+    @staticmethod
     def load_observation_data(config: Config) -> Dict[str, pd.DataFrame]:
         out = {}
         sat_day_dir = config.sat_day_dir()
@@ -84,12 +98,17 @@ class DataLoader:
             if not file_path.exists():
                 file_path = Path(config.obs_root_dir) / src["csv_file"]
             if not file_path.exists():
+                out[src["name"]] = pd.DataFrame()
                 continue
+
             df = pd.read_csv(file_path)
-            if "time" in df.columns and config.targettime:
-                dt = f"{config.targettime[:4]}-{config.targettime[4:6]}-{config.targettime[6:8]}-{config.targettime[8:10] if len(config.targettime)>=10 else '00'}"
-                df = df[df["time"].astype(str) == dt].copy()
+            df = DataLoader._filter_by_target_hour(df, config.targettime)
+
             vcol = src["columns"]["val"]
+            if vcol not in df.columns:
+                out[src["name"]] = pd.DataFrame()
+                continue
+
             vmin, vmax = src.get("val_range", [-np.inf, np.inf])
             df = df[(df[vcol] >= vmin) & (df[vcol] <= vmax)].copy()
             if not df.empty:
